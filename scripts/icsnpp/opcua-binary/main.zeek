@@ -95,7 +95,7 @@ export {
    type State: record {
 		## Pending requests, keyed by request_id.
 		pending_requests:  table[count] of OPCUA_Binary::Info;
-		## Pending responses, keyed by request_id.
+		## Pending responses, keyed by response_id.
 		pending_responses: table[count] of OPCUA_Binary::Info;
 	};
 
