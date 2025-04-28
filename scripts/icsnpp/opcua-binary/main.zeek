@@ -14,20 +14,20 @@ module ICSNPP_OPCUA_Binary;
 
 export {
 	redef enum Log::ID += { LOG,                                                     LOG_STATUS_CODE,                                         LOG_DIAG_INFO,
-                           LOG_AGGREGATE_FILTER,                                    LOG_DATA_CHANGE_FILTER,                                  LOG_EVENT_FILTER,                           
-                           LOG_EVENT_FILTER_ATTRIBUTE_OPERAND,                      LOG_EVENT_FILTER_ATTRIBUTE_OPERAND_BROWSE_PATHS,         LOG_EVENT_FILTER_CONTENT_FILTER,            
+                           LOG_AGGREGATE_FILTER,                                    LOG_DATA_CHANGE_FILTER,                                  LOG_EVENT_FILTER,
+                           LOG_EVENT_FILTER_ATTRIBUTE_OPERAND,                      LOG_EVENT_FILTER_ATTRIBUTE_OPERAND_BROWSE_PATHS,         LOG_EVENT_FILTER_CONTENT_FILTER,
                            LOG_EVENT_FILTER_CONTENT_FILTER_ELEMENT,                 LOG_EVENT_FILTER_ELEMENT_OPERAND,                        LOG_EVENT_FILTER_LITERAL_OPERAND,
-                          	LOG_EVENT_FILTER_SIMPLE_ATTRIBUTE_OPERAND,               LOG_EVENT_FILTER_SELECT_CLAUSE,                          LOG_EVENT_FILTER_SIMPLE_ATTRIBUTE_OPERAND_BROWSE_PATHS,  
-                           LOG_VARIANT_ARRAY_DIMS,                                  LOG_VARIANT_DATA,                                        LOG_VARIANT_DATA_VALUE,                                  
-                           LOG_VARIANT_EXTENSION_OBJECT,                            LOG_VARIANT_METADATA,                                    LOG_ACTIVATE_SESSION,                                      
-                           LOG_ACTIVATE_SESSION_CLIENT_SOFTWARE_CERT,               LOG_ACTIVATE_SESSION_LOCALE_ID,                          LOG_BROWSE,                                 
-                           LOG_BROWSE_DESCRIPTION,                                  LOG_BROWSE_RESPONSE_REFERENCES,                          LOG_BROWSE_REQUEST_CONTINUATION_POINT, 
-                           LOG_BROWSE_RESULT,                                       LOG_CLOSE_SESSION,                                       LOG_CREATE_MONITORED_ITEMS,                              
-                           LOG_CREATE_MONITORED_ITEMS_CREATE_ITEM,                  LOG_CREATE_SESSION,                                      LOG_CREATE_SESSION_DISCOVERY,      
+                          	LOG_EVENT_FILTER_SIMPLE_ATTRIBUTE_OPERAND,               LOG_EVENT_FILTER_SELECT_CLAUSE,                          LOG_EVENT_FILTER_SIMPLE_ATTRIBUTE_OPERAND_BROWSE_PATHS,
+                           LOG_VARIANT_ARRAY_DIMS,                                  LOG_VARIANT_DATA,                                        LOG_VARIANT_DATA_VALUE,
+                           LOG_VARIANT_EXTENSION_OBJECT,                            LOG_VARIANT_METADATA,                                    LOG_ACTIVATE_SESSION,
+                           LOG_ACTIVATE_SESSION_CLIENT_SOFTWARE_CERT,               LOG_ACTIVATE_SESSION_LOCALE_ID,                          LOG_BROWSE,
+                           LOG_BROWSE_DESCRIPTION,                                  LOG_BROWSE_RESPONSE_REFERENCES,                          LOG_BROWSE_REQUEST_CONTINUATION_POINT,
+                           LOG_BROWSE_RESULT,                                       LOG_CLOSE_SESSION,                                       LOG_CREATE_MONITORED_ITEMS,
+                           LOG_CREATE_MONITORED_ITEMS_CREATE_ITEM,                  LOG_CREATE_SESSION,                                      LOG_CREATE_SESSION_DISCOVERY,
                            LOG_CREATE_SESSION_ENDPOINTS,                            LOG_CREATE_SESSION_USER_TOKEN,                           LOG_CREATE_SUBSCRIPTION,
-                           LOG_GET_ENDPOINTS,                                       LOG_GET_ENDPOINTS_DESCRIPTION,                           LOG_GET_ENDPOINTS_DISCOVERY, 
+                           LOG_GET_ENDPOINTS,                                       LOG_GET_ENDPOINTS_DESCRIPTION,                           LOG_GET_ENDPOINTS_DISCOVERY,
                            LOG_GET_ENDPOINTS_USER_TOKEN,                            LOG_GET_ENDPOINTS_LOCALE_ID,                             LOG_GET_ENDPOINTS_PROFILE_URI,
-                           LOG_READ,                                                LOG_READ_NODES_TO_READ,                                  LOG_READ_RESULTS,    
+                           LOG_READ,                                                LOG_READ_NODES_TO_READ,                                  LOG_READ_RESULTS,
                            LOG_WRITE,                                               LOG_OPENSECURE_CHANNEL
                          };
 
@@ -66,17 +66,17 @@ export {
    global log_policy_browse_response_references: Log::PolicyHook;
 
    global log_policy_close_session: Log::PolicyHook;
-    
+
    global log_policy_create_monitored_items: Log::PolicyHook;
    global log_policy_create_monitored_items_create_item: Log::PolicyHook;
-    
+
    global log_policy_create_session: Log::PolicyHook;
    global log_policy_create_session_discovery: Log::PolicyHook;
    global log_policy_create_session_endpoints: Log::PolicyHook;
    global log_policy_create_session_user_token: Log::PolicyHook;
 
    global log_policy_create_subscription: Log::PolicyHook;
-    
+
    global log_policy_get_endpoints: Log::PolicyHook;
    global log_policy_get_endpoints_description: Log::PolicyHook;
    global log_policy_get_endpoints_discovery: Log::PolicyHook;
@@ -89,16 +89,17 @@ export {
    global log_policy_read_results: Log::PolicyHook;
 
    global log_policy_write: Log::PolicyHook;
-   
+
    global log_policy_opensecure_channel: Log::PolicyHook;
 
    type State: record {
-		## Pending requests, keyed by request_id.
-		pending_requests:  table[count] of OPCUA_Binary::Info;
-		## Pending responses, keyed by response_id.
-		pending_responses: table[count] of OPCUA_Binary::Info;
+		## Pending requests, keyed by conn_id.
+		pending_requests:  table[conn_id] of OPCUA_Binary::Info;
+		## Pending responses, keyed by conn_id.
+		pending_responses: table[conn_id] of OPCUA_Binary::Info;
 	};
 
+   global finalize_opcua_binary: Conn::RemovalHook;
 }
 
 # Port-based detection
@@ -108,41 +109,59 @@ redef likely_server_ports += { ports };
 redef record connection += {
 	opcua_binary_state:  State &optional;
 };
- 
+
+function compare_conn_ids(conn_id1: conn_id, conn_id2: conn_id): bool
+{
+   return (conn_id1$orig_h == conn_id2$orig_h)
+          && (conn_id1$orig_p == conn_id2$orig_p)
+          && (conn_id1$resp_h == conn_id2$resp_h)
+          && (conn_id1$resp_p == conn_id2$resp_p);
+}
+
 function check_matching_common(request_info: OPCUA_Binary::Info, response_info: OPCUA_Binary::Info): bool
 {
-   if (request_info$ts != response_info$ts){
+   if (request_info$uid != response_info$uid) {
       return F;
    }
-   if (request_info$uid != response_info$uid){
+   if (!compare_conn_ids(request_info$id, response_info$id)) {
       return F;
    }
-   if (request_info$id != response_info$id){
+   if (request_info$msg_type != response_info$msg_type) {
       return F;
    }
-   if (request_info$msg_type != response_info$msg_type){ 
-      return F;
-   }
-   if (request_info$is_final != response_info$is_final){
+   if (request_info$is_final != response_info$is_final) {
       return F;
    }
    return T;
 }
 
-function copy_common_data_to_logging_record(info: OPCUA_Binary::Info): OPCUA_Binary::Info_Log 
-{  
-   local log_info = OPCUA_Binary::Info_Log(
-      $ts               = info$ts,
-      $uid              = info$uid,
-      $id               = info$id,
-      $msg_type         = info$msg_type,
-      $is_final         = info$is_final,
-      $total_size       = info$msg_size
-   );
+function copy_common_data_to_logging_record(info: OPCUA_Binary::Info, is_request: bool): OPCUA_Binary::Info_Log
+{
+   local log_info: OPCUA_Binary::Info_Log;
+
+   # per zeek convention we don't want to use the response timestamp if we already have a request timestamp
+   if (is_request) {
+      log_info = OPCUA_Binary::Info_Log(
+         $ts               = info$ts,
+         $uid              = info$uid,
+         $id               = info$id,
+         $msg_type         = info$msg_type,
+         $is_final         = info$is_final,
+         $total_size       = info$msg_size
+      );
+   } else {
+      log_info = OPCUA_Binary::Info_Log(
+         $uid              = info$uid,
+         $id               = info$id,
+         $msg_type         = info$msg_type,
+         $is_final         = info$is_final,
+         $total_size       = info$msg_size
+      );
+   }
    return log_info;
 }
 
-function map_response(response_info: OPCUA_Binary::Info, log_info: OPCUA_Binary::Info_Log): OPCUA_Binary::Info_Log 
+function map_response(response_info: OPCUA_Binary::Info, log_info: OPCUA_Binary::Info_Log): OPCUA_Binary::Info_Log
 {
    if (response_info?$opcua_link_id){
       log_info$res_opcua_link_id = response_info$opcua_link_id;
@@ -186,7 +205,7 @@ function map_response(response_info: OPCUA_Binary::Info, log_info: OPCUA_Binary:
    return log_info;
 }
 
-function map_request(request_info: OPCUA_Binary::Info, log_info: OPCUA_Binary::Info_Log): OPCUA_Binary::Info_Log 
+function map_request(request_info: OPCUA_Binary::Info, log_info: OPCUA_Binary::Info_Log): OPCUA_Binary::Info_Log
 {
    if (request_info?$opcua_link_id){
       log_info$req_opcua_link_id = request_info$opcua_link_id;
@@ -210,7 +229,7 @@ function map_request(request_info: OPCUA_Binary::Info, log_info: OPCUA_Binary::I
       log_info$req_identifier_str = request_info$identifier_str;
    }
    if (request_info?$req_hdr_node_id_type){
-      log_info$rreq_hdr_node_id_type = request_info$req_hdr_node_id_type;
+      log_info$req_hdr_node_id_type = request_info$req_hdr_node_id_type;
    }
    if (request_info?$req_hdr_node_id_namespace_idx){
       log_info$req_hdr_node_id_namespace_idx = request_info$req_hdr_node_id_namespace_idx;
@@ -255,12 +274,10 @@ function map_request_response(request_info: OPCUA_Binary::Info, response_info: O
 {
    # calculate total size
    local total_size = request_info$msg_size + response_info$msg_size;
-   
+
    # create log info
    local log_info = copy_common_data_to_logging_record(request_info);
-   
-   # set the total size
-   log_info$msg_size = total_size;
+   log_info$total_size = total_size;
 
    # map fields from request and response
    log_info = map_request(request_info, log_info);
@@ -270,7 +287,7 @@ function map_request_response(request_info: OPCUA_Binary::Info, response_info: O
    return log_info;
 }
 
-function set_service(c: connection, service: string) 
+function set_service(c: connection, service: string)
 {
    # Ensure that conn.log:service is set if it has not already been
    if ((!c?$service) || (|c$service| == 0))
@@ -278,27 +295,31 @@ function set_service(c: connection, service: string)
 }
 
 function handle_pending_request(c: connection, response_info: OPCUA_Binary::Info)
-{ 
-   local request_info = c$opcua_binary_state$pending_requests[response_info$request_id];
+{
+   local request_info = c$opcua_binary_state$pending_requests[response_info$id];
 
-   if (check_matching_common(request_info, response_info)) {
-      local log_info = copy_common_data_to_logging_record(response_info);
-      log_info = map_request_response(request_info, response_info);
-      Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
-      delete c$opcua_binary_state$pending_requests[response_info$request_id];
+   if (!check_matching_common(request_info, response_info)) {
+      return;
    }
+
+   local log_info = copy_common_data_to_logging_record(response_info);
+   log_info = map_request_response(request_info, response_info);
+   Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+   delete c$opcua_binary_state$pending_requests[response_info$id];
 }
 
 function handle_pending_response(c: connection, request_info: OPCUA_Binary::Info)
 {
-   local response_info = c$opcua_binary_state$pending_responses[request_info$response_id];
+   local response_info = c$opcua_binary_state$pending_responses[request_info$id];
 
-   if (check_matching_common(request_info, response_info)) {
-      local log_info = copy_common_data_to_logging_record(request_info);
-      log_info = map_request_response(request_info, response_info);
-      Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
-      delete c$opcua_binary_state$pending_responses[request_info$response_id];
+   if (!check_matching_common(request_info, response_info)) {
+      return;
    }
+
+   local log_info = copy_common_data_to_logging_record(request_info);
+   log_info = map_request_response(request_info, response_info);
+   Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+   delete c$opcua_binary_state$pending_responses[request_info$id];
 }
 
 event zeek_init() &priority=5
@@ -371,17 +392,17 @@ event zeek_init() &priority=5
 
 event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
    {
+      # if the connection does not have a state, create state
+      if( !c?$opcua_binary_state ) {
+         c$opcua_binary_state = State();
+      }
+
       # Fix hello, acknowledge, opcua_link_id
       local log_immediately_msg_types = set("HEL", "ACK", "ERR", "OPN", "CLO");
       set_service(c, "opcua-binary");
       info$ts  = network_time();
       info$uid = c$uid;
       info$id  = c$id;
-
-      # if the connection does not have a state, return
-      if( !c?$opcua_binary_state ) {
-         return;
-      }
 
       # if message type is in log_immediately_msg_types, log immediately
       if (info$msg_type in log_immediately_msg_types) {
@@ -395,25 +416,23 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
          if (info?$max_msg_size) {log_info$max_msg_size = info$max_msg_size;}
          if (info?$max_chunk_cnt) {log_info$max_chunk_cnt = info$max_chunk_cnt;}
          if (info?$endpoint_url) {log_info$endpoint_url = info$endpoint_url;}
-         
+
          Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
       }
       # else see if this message has a match in responses
-      else if (info$request_id in c$opcua_binary_state$pending_responses) {
+      else if (info$id in c$opcua_binary_state$pending_responses) {
          handle_pending_response(c, info);
       }
       # else see if this message has a match in requests
-      else if (info$response_id in c$opcua_binary_state$pending_requests) {
+      else if (info$id in c$opcua_binary_state$pending_requests) {
          handle_pending_request(c, info);
       }
       # otherwise add to pending
+      else if ("Request" in info$identifier_str) {
+         c$opcua_binary_state$pending_requests[info$id] = info;
+      }
       else {
-         if (info$request_id !in c$opcua_binary_state$pending_requests){
-            c$opcua_binary_state$pending_requests[info$request_id] = info;
-         }
-         else if (info$response_id !in c$opcua_binary_state$pending_responses) {
-            c$opcua_binary_state$pending_responses[info$response_id] = info;
-         }
+         c$opcua_binary_state$pending_responses[info$id] = info;
       }
    }
 
@@ -536,7 +555,7 @@ event opcua_binary_event_filter_select_clause_event(c: connection, select_clause
 
        Log::write(ICSNPP_OPCUA_Binary::LOG_EVENT_FILTER_SELECT_CLAUSE, select_clause_event);
    }
-    
+
 event opcua_binary_event_filter_simple_attribute_operand_event(c: connection, simple_attribute_operand_event: OPCUA_Binary::SimpleAttributeOperand)
    {
        set_service(c, "opcua-binary");
@@ -577,7 +596,7 @@ event opcua_binary_variant_data_event(c: connection, event_to_log: OPCUA_Binary:
 
        Log::write(ICSNPP_OPCUA_Binary::LOG_VARIANT_DATA, event_to_log);
    }
-   
+
 event opcua_binary_variant_data_value_event(c: connection, event_to_log: OPCUA_Binary::VariantDataValue)
    {
        set_service(c, "opcua-binary");
@@ -837,7 +856,7 @@ event opcua_binary_read_event(c: connection, event_to_log: OPCUA_Binary::Read)
 
        Log::write(ICSNPP_OPCUA_Binary::LOG_READ, event_to_log);
    }
-   
+
 event opcua_binary_read_nodes_to_read_event(c: connection, event_to_log: OPCUA_Binary::ReadNodesToRead)
    {
        set_service(c, "opcua-binary");
@@ -880,17 +899,16 @@ event opcua_binary_opensecure_channel_event(c: connection, opensecure_channel: O
 
 hook finalize_opcua_binary(c: connection)
 	{
+      local log_info: OPCUA_Binary::Info_Log;
       # if the connection has a state and there are pending requests, log them
       if ( c?$opcua_binary_state && |c$opcua_binary_state$pending_requests| > 0 )
       {
          for ( request_id, request_info in c$opcua_binary_state$pending_requests )
          {
-            local log_info = copy_common_data_to_logging_record(request_info);
+            log_info = copy_common_data_to_logging_record(request_info, IS_REQUEST);
             log_info = map_request(request_info, log_info);
             Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
          }
-         # clear the pending table although connection is ending anyway
-         delete c$opcua_binary_state$pending_requests;
       }
 
       # if the connection has a state and there are pending responses, log them
@@ -898,11 +916,9 @@ hook finalize_opcua_binary(c: connection)
       {
          for ( response_id, response_info in c$opcua_binary_state$pending_responses )
          {
-            local log_info = copy_common_data_to_logging_record(response_info);
+            log_info = copy_common_data_to_logging_record(response_info, IS_RESPONSE);
             log_info = map_response(response_info, log_info);
             Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
          }
-         # clear the pending table although connection is ending anyway
-         delete c$opcua_binary_state$pending_responses;
       }
 	}
