@@ -98,9 +98,6 @@ export {
 		## Pending responses, keyed by opcua request_id. See types.zeek for more information.
 		pending_responses: table[count] of OPCUA_Binary::Info;
 	};
-
-   # global finalize_opcua_binary: Conn::RemovalHook;
-   global test: Conn::RemovalHook;
 }
 
 # Port-based detection
