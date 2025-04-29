@@ -115,24 +115,24 @@ redef record connection += {
 # If we are we will omit the response timestamp from the log record
 const MAPPING_REQ_RES = T;
 
-const MAX_PENDING_REQUESTS = 100;
-const MAX_PENDING_RESPONSES = 100;
-const REQUEST = "Request";
-const RESPONSE = "Response";
-global pending_requests_count = 0;
-global pending_responses_count = 0;
+const MAX_PENDING_REQUESTS = 256; # Arbitrary number
+const MAX_PENDING_RESPONSES = 256; # Arbitrary number
+const REQUEST_IDENTIFIER = "Request";
+const RESPONSE_IDENTIFIER = "Response";
+global GLOBAL_PENDING_REQUESTS_COUNT = 0;
+global GLOBAL_PENDING_RESPONSES_COUNT = 0;
 
 # Description: Determines if incoming message is a request or response
 # Returns: bool
 function check_message_type(info: OPCUA_Binary::Info, message_type: string) : bool
 {
-   if ( message_type == REQUEST ) {
-      if (info?$identifier_str && REQUEST in info$identifier_str) {
+   if ( message_type == REQUEST_IDENTIFIER ) {
+      if (info?$identifier_str && REQUEST_IDENTIFIER in info$identifier_str) {
          return T;
       }
    }
-   else if ( message_type == RESPONSE ) {
-      if (info?$identifier_str && RESPONSE in info$identifier_str) {
+   else if ( message_type == RESPONSE_IDENTIFIER ) {
+      if (info?$identifier_str && RESPONSE_IDENTIFIER in info$identifier_str) {
          return T;
       }
    }
@@ -145,17 +145,15 @@ function check_message_type(info: OPCUA_Binary::Info, message_type: string) : bo
 # Returns: bool
 function add_pending_request(c: connection, info: OPCUA_Binary::Info) : bool
 {
-   if ( pending_requests_count >= MAX_PENDING_REQUESTS ) {
+   if ( GLOBAL_PENDING_REQUESTS_COUNT >= MAX_PENDING_REQUESTS ) {
       return F;
    }
-   ++pending_requests_count;
+
    if ( info$request_id in c$opcua_binary_state$pending_requests ) {
-      print "pending request already exists: ", info$identifier_str, info$request_id;
+      return F;
    }
-   else {
-      c$opcua_binary_state$pending_requests[info$request_id] = info;
-   }
-   
+   ++GLOBAL_PENDING_REQUESTS_COUNT;
+   c$opcua_binary_state$pending_requests[info$request_id] = info;
    return T;
 }
 
@@ -164,16 +162,14 @@ function add_pending_request(c: connection, info: OPCUA_Binary::Info) : bool
 # Returns: bool
 function add_pending_response(c: connection, info: OPCUA_Binary::Info) : bool
 {
-   if ( pending_responses_count >= MAX_PENDING_RESPONSES ) {
+   if ( GLOBAL_PENDING_RESPONSES_COUNT >= MAX_PENDING_RESPONSES ) {
       return F;
    }
-   ++pending_responses_count;
+   ++GLOBAL_PENDING_RESPONSES_COUNT;
    if ( info$request_id in c$opcua_binary_state$pending_responses ) {
-      print "pending response already exists: ", info$identifier_str, info$request_id;
+      return F;
    }
-   else {
-      c$opcua_binary_state$pending_responses[info$request_id] = info;
-   }
+   c$opcua_binary_state$pending_responses[info$request_id] = info;
    return T;
 }
 
@@ -206,7 +202,7 @@ function log_message(c: connection, info: OPCUA_Binary::Info)
    if (info?$max_msg_size) {log_info$max_msg_size = info$max_msg_size;}
    if (info?$max_chunk_cnt) {log_info$max_chunk_cnt = info$max_chunk_cnt;}
    if (info?$endpoint_url) {log_info$endpoint_url = info$endpoint_url;}
-   print "logging message: ", info$identifier_str, info$request_id;
+
    Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
 }
 
@@ -215,13 +211,13 @@ function log_message(c: connection, info: OPCUA_Binary::Info)
 # If we have too many pending requests or responses then log the message immediately
 function handle_add_pending(c: connection, info: OPCUA_Binary::Info)
 {
-   if (check_message_type(info, REQUEST)) {
-      if ( add_pending_request(c, info) ) {
+   if (check_message_type(info, REQUEST_IDENTIFIER)) {
+      if ( !add_pending_request(c, info) ) {
          log_message(c, info);
       }
    }
    else {
-      if ( add_pending_response(c, info) ) {
+      if ( !add_pending_response(c, info) ) {
          log_message(c, info);
       }
    }
@@ -234,7 +230,7 @@ function remove_pending_request(c: connection, request_info: OPCUA_Binary::Info)
 {
    if ( request_info$request_id in c$opcua_binary_state$pending_requests ) {
       delete c$opcua_binary_state$pending_requests[request_info$request_id];
-      --pending_requests_count;
+      --GLOBAL_PENDING_REQUESTS_COUNT;
       return T;
    }
    return F;
@@ -247,7 +243,7 @@ function remove_pending_response(c: connection, response_info: OPCUA_Binary::Inf
 {
    if ( response_info$request_id in c$opcua_binary_state$pending_responses ) {
       delete c$opcua_binary_state$pending_responses[response_info$request_id];
-      --pending_responses_count;
+      --GLOBAL_PENDING_RESPONSES_COUNT;
       return T;
    }
    return F;
@@ -268,8 +264,8 @@ function compare_conn_ids(conn_id1: conn_id, conn_id2: conn_id): bool
 # Returns: string
 function strip_identifier(identifier: string, is_request: bool): string
 {
-   local REQUEST_SIZE = |REQUEST|;
-   local RESPONSE_SIZE = |RESPONSE|;
+   local REQUEST_SIZE = |REQUEST_IDENTIFIER|;
+   local RESPONSE_SIZE = |RESPONSE_IDENTIFIER|;
 
    if (is_request) {
       return identifier[:(|identifier| - REQUEST_SIZE)];
@@ -288,9 +284,6 @@ function compare_stripped_identifiers(identifier1: string, identifier2: string):
 # Returns: bool
 function check_matching_common(request_info: OPCUA_Binary::Info, response_info: OPCUA_Binary::Info): bool
 {
-   # print "req_identifier: ", request_info$identifier_str;
-   # print "res_identifier: ", response_info$identifier_str;
-   # if the req and res identifiers don't match after being stripped of the trailing "Request" or "Response" then they don't match
    if (!compare_stripped_identifiers(request_info$identifier_str, response_info$identifier_str)) {
       return F;
    }
@@ -557,7 +550,7 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
       }
 
       # else see if this message is a request and has a match in responses
-      else if (info$request_id in c$opcua_binary_state$pending_responses && check_message_type(info, REQUEST)) {
+      else if (info$request_id in c$opcua_binary_state$pending_responses && check_message_type(info, REQUEST_IDENTIFIER)) {
          if ( check_matching_common(info, c$opcua_binary_state$pending_responses[info$request_id]) ) {
             handle_pending_response(c, info);
          }
@@ -566,7 +559,7 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
          }
       }
       # else see if this message is a response and has a match in requests
-      else if (info$request_id in c$opcua_binary_state$pending_requests && check_message_type(info, RESPONSE)) {
+      else if (info$request_id in c$opcua_binary_state$pending_requests && check_message_type(info, RESPONSE_IDENTIFIER)) {
          if ( check_matching_common(c$opcua_binary_state$pending_requests[info$request_id], info) ) {
             handle_pending_request(c, info);
          }
@@ -1042,9 +1035,14 @@ event opcua_binary_opensecure_channel_event(c: connection, opensecure_channel: O
 
 event connection_state_remove(c: connection)
    {
+
+      if ( !c?$opcua_binary_state ) {
+         return;
+      }
+
       local log_info: OPCUA_Binary::Info_Log;
       # if the connection has a state and there are pending requests, log them
-      if ( c?$opcua_binary_state && |c$opcua_binary_state$pending_requests| > 0 )
+      if ( |c$opcua_binary_state$pending_requests| > 0 )
       {
          for ( request_id, request_info in c$opcua_binary_state$pending_requests )
          {
@@ -1055,7 +1053,7 @@ event connection_state_remove(c: connection)
       }
 
       # if the connection has a state and there are pending responses, log them
-      if ( c?$opcua_binary_state && |c$opcua_binary_state$pending_responses| > 0 )
+      if ( |c$opcua_binary_state$pending_responses| > 0 )
       {
          for ( response_id, response_info in c$opcua_binary_state$pending_responses )
          {
