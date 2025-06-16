@@ -183,14 +183,6 @@ function copy_common_data_to_logging_record(info: OPCUA_Binary::Info): OPCUA_Bin
       $total_size       = info$msg_size
    );
 
-   return log_info;
-}
-
-# Description: Logs a message
-function log_message(c: connection, info: OPCUA_Binary::Info)
-{
-   local log_info = copy_common_data_to_logging_record(info);
-
    if (info?$error) {log_info$error = info$error;}
    if (info?$reason) {log_info$reason = info$reason;}
    if (info?$version) {log_info$version = info$version;}
@@ -199,6 +191,26 @@ function log_message(c: connection, info: OPCUA_Binary::Info)
    if (info?$max_msg_size) {log_info$max_msg_size = info$max_msg_size;}
    if (info?$max_chunk_cnt) {log_info$max_chunk_cnt = info$max_chunk_cnt;}
    if (info?$endpoint_url) {log_info$endpoint_url = info$endpoint_url;}
+
+   # Security policy / certificate information (may be present in OPN messages)
+   if (info?$sec_policy_uri_len) {log_info$sec_policy_uri_len = info$sec_policy_uri_len;}
+   if (info?$sec_policy_uri) {log_info$sec_policy_uri = info$sec_policy_uri;}
+   if (info?$snd_cert_len) {log_info$snd_cert_len = info$snd_cert_len;}
+   if (info?$snd_cert) {log_info$snd_cert = info$snd_cert;}
+   if (info?$rcv_cert_len) {log_info$rcv_cert_len = info$rcv_cert_len;}
+   if (info?$rcv_cert) {log_info$rcv_cert = info$rcv_cert;}
+
+   # Channel identifiers
+   if (info?$sec_channel_id) {log_info$sec_channel_id = info$sec_channel_id;}
+   if (info?$sec_token_id) {log_info$sec_token_id = info$sec_token_id;}
+
+   return log_info;
+}
+
+# Description: Logs a message
+function log_message(c: connection, info: OPCUA_Binary::Info)
+{
+   local log_info = copy_common_data_to_logging_record(info);
 
    Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
 }
