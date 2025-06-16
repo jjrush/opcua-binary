@@ -114,8 +114,6 @@ export {
 
         # Msg_MSG, Msg_CLO, Msg_OPN
         sec_channel_id                : count   &log &optional;
-
-        # Msg_MSG, Msg_CLO
         sec_token_id                  : count   &log &optional;
 
         # Msg Body
