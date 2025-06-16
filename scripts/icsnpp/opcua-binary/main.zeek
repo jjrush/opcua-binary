@@ -98,6 +98,11 @@ export {
 		## Pending responses, keyed by opcua request_id. See types.zeek for more information.
 		pending_responses: table[count] of OPCUA_Binary::Info;
 	};
+
+   const MAX_PENDING_REQUESTS = 256 &redef; # Arbitrary upper bound of concurrent requests (overridable for testing)
+   const MAX_PENDING_RESPONSES = 256 &redef; # Arbitrary upper bound of concurrent responses (overridable for testing)
+
+   const DEBUG_MODE = F &redef; # Whether or not we are in testing mode
 }
 
 # Port-based detection
@@ -112,8 +117,6 @@ redef record connection += {
 # If we are we will omit the response timestamp from the log record
 const MAPPING_REQ_RES = T;
 
-const MAX_PENDING_REQUESTS = 256; # Arbitrary number
-const MAX_PENDING_RESPONSES = 256; # Arbitrary number
 const REQUEST_IDENTIFIER = "Request";
 const RESPONSE_IDENTIFIER = "Response";
 global GLOBAL_PENDING_REQUESTS_COUNT = 0;
@@ -202,7 +205,7 @@ function copy_common_data_to_logging_record(info: OPCUA_Binary::Info): OPCUA_Bin
 
    # Channel identifiers
    if (info?$sec_channel_id) {log_info$sec_channel_id = info$sec_channel_id;}
-   if (info?$sec_token_id) {log_info$sec_token_id = info$sec_token_id;}
+   # if (info?$sec_token_id) {log_info$sec_token_id = info$sec_token_id;}
 
    return log_info;
 }
@@ -222,11 +225,17 @@ function handle_add_pending(c: connection, info: OPCUA_Binary::Info)
 {
    if (check_message_type(info, REQUEST_IDENTIFIER)) {
       if ( !add_pending_request(c, info) ) {
+         if (DEBUG_MODE) {
+            print "MAX_PENDING_REQUESTS reached, flushing pending request";
+         }
          log_message(c, info);
       }
    }
    else {
       if ( !add_pending_response(c, info) ) {
+         if (DEBUG_MODE) {
+            print "MAX_PENDING_RESPONSES reached, flushing pending response";
+         }
          log_message(c, info);
       }
    }
@@ -541,6 +550,10 @@ event zeek_init() &priority=5
 
 event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
    {
+      if (DEBUG_MODE) {
+         print "MAX_PENDING_REQUESTS: ", MAX_PENDING_REQUESTS;
+         print "MAX_PENDING_RESPONSES: ", MAX_PENDING_RESPONSES;
+      }
       # if the connection does not have a state, create state
       if ( !c?$opcua_binary_state ) {
          c$opcua_binary_state = State();
@@ -1057,6 +1070,9 @@ event connection_state_remove(c: connection)
       # if the connection has a state and there are pending requests, log them
       if ( |c$opcua_binary_state$pending_requests| > 0 )
       {
+         if (DEBUG_MODE) {
+            print "Connection ending, leftover pending requests: ", |c$opcua_binary_state$pending_requests|;
+         }
          for ( request_id, request_info in c$opcua_binary_state$pending_requests )
          {
             log_info = copy_common_data_to_logging_record(request_info);
@@ -1068,6 +1084,9 @@ event connection_state_remove(c: connection)
       # if the connection has a state and there are pending responses, log them
       if ( |c$opcua_binary_state$pending_responses| > 0 )
       {
+         if (DEBUG_MODE) {
+            print "Connection ending, leftover flushing pending responses: ", |c$opcua_binary_state$pending_responses|;
+         }
          for ( response_id, response_info in c$opcua_binary_state$pending_responses )
          {
             log_info = copy_common_data_to_logging_record(response_info);
