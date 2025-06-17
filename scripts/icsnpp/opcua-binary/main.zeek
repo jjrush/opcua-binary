@@ -602,8 +602,6 @@ event opcua_binary_diag_info_event(c: connection, diag_info: OPCUA_Binary::Diagn
        diag_info$id  = c$id;
 
        Log::write(ICSNPP_OPCUA_Binary::LOG_DIAG_INFO, diag_info);
-
-       Log::write(ICSNPP_OPCUA_Binary::LOG_DIAG_INFO, diag_info);
    }
 
 event opcua_binary_status_code_event(c: connection, status: OPCUA_Binary::StatusCodeDetail)
@@ -612,8 +610,6 @@ event opcua_binary_status_code_event(c: connection, status: OPCUA_Binary::Status
        status$ts  = network_time();
        status$uid = c$uid;
        status$id  = c$id;
-
-       Log::write(ICSNPP_OPCUA_Binary::LOG_STATUS_CODE, status);
 
        Log::write(ICSNPP_OPCUA_Binary::LOG_STATUS_CODE, status);
    }
