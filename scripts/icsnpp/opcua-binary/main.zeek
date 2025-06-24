@@ -113,6 +113,8 @@ redef record connection += {
 	opcua_binary_state:  State &optional;
 };
 
+const MAPPING_REQ_RES = T;
+
 const REQUEST_IDENTIFIER = "Request";
 const RESPONSE_IDENTIFIER = "Response";
 global GLOBAL_PENDING_REQUESTS_COUNT = 0;
