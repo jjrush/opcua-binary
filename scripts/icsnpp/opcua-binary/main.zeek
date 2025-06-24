@@ -571,8 +571,8 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
       }
 
       else if (info$msg_type == "CLO") {
-         local log_info = copy_common_data_to_logging_record(request_info);
-         log_info = map_request_response(request_info, response_info);
+         local log_info = copy_common_data_to_logging_record(info);
+         map_request_response(info, log_info);
          Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
       }
    
