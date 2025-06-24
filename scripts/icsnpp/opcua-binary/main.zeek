@@ -113,10 +113,6 @@ redef record connection += {
 	opcua_binary_state:  State &optional;
 };
 
-# Whether or not we are mapping request and response fields to the log record
-# If we are we will omit the response timestamp from the log record
-const MAPPING_REQ_RES = T;
-
 const REQUEST_IDENTIFIER = "Request";
 const RESPONSE_IDENTIFIER = "Response";
 global GLOBAL_PENDING_REQUESTS_COUNT = 0;
@@ -202,6 +198,7 @@ function copy_common_data_to_logging_record(info: OPCUA_Binary::Info): OPCUA_Bin
    if (info?$snd_cert) {log_info$snd_cert = info$snd_cert;}
    if (info?$rcv_cert_len) {log_info$rcv_cert_len = info$rcv_cert_len;}
    if (info?$rcv_cert) {log_info$rcv_cert = info$rcv_cert;}
+   if (info?$request_id) {log_info$request_id = info$request_id;}
 
    # Channel identifiers
    if (info?$sec_channel_id) {log_info$sec_channel_id = info$sec_channel_id;}
@@ -346,7 +343,7 @@ function map_response(response_info: OPCUA_Binary::Info, log_info: OPCUA_Binary:
       log_info$res_identifier_str = response_info$identifier_str;
    }
    # if we are mapping both req and res use the req's timestamp as the sole timestamp, else log the res's timestamp
-   if ( !mapping_req_res && response_info?$res_hdr_timestamp){
+   if (response_info?$res_hdr_timestamp){
       log_info$res_hdr_timestamp = response_info$res_hdr_timestamp;
    }
    if (response_info?$res_hdr_request_handle){
@@ -560,7 +557,7 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
       }
 
       # Fix hello, acknowledge, opcua_link_id
-      local log_immediately_msg_types = set("HEL", "ACK", "ERR", "OPN", "CLO");
+      local log_immediately_msg_types = set("HEL", "ACK", "ERR");
       set_service(c, "opcua-binary");
       info$ts  = network_time();
       info$uid = c$uid;
@@ -570,6 +567,13 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
       if (info$msg_type in log_immediately_msg_types) {
          log_message(c, info);
       }
+
+      else if (info$msg_type == "CLO") {
+         local log_info = copy_common_data_to_logging_record(request_info);
+         log_info = map_request_response(request_info, response_info);
+         Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+      }
+   
 
       # else see if this message is a request and has a match in responses
       else if (info$request_id in c$opcua_binary_state$pending_responses && check_message_type(info, REQUEST_IDENTIFIER)) {
