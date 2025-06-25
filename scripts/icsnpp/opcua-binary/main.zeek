@@ -575,6 +575,16 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
          map_request(info, log_info);
          Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
       }
+
+      else if (info$msg_type == "OPN") {
+         local log_info = copy_common_data_to_logging_record(info);
+         if (REQUEST_IDENTIFIER in info$identifier_str) {
+            map_request(info, log_info);         }
+         else if (RESPONSE_IDENTIFIER in info$identifier_str) {
+            map_response(info, log_info);
+         }
+         Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+      }
    
 
       # else see if this message is a request and has a match in responses
