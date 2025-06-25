@@ -479,6 +479,23 @@ function handle_pending_response(c: connection, request_info: OPCUA_Binary::Info
    remove_pending_response(c, c$opcua_binary_state$pending_responses[request_info$request_id]);
 }
 
+function handle_clo_msg(clo_info: OPCUA_Binary::Info){
+   local log_info = copy_common_data_to_logging_record(clo_info);
+   map_request(clo_info, log_info);
+   Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+}
+function handle_opn_msg(opn_info: OPCUA_Binary::Info){
+   local log_info = copy_common_data_to_logging_record(opn_info);
+   if (REQUEST_IDENTIFIER in opn_info$identifier_str) {
+      map_request(opn_info, log_info);         }
+   else if (RESPONSE_IDENTIFIER in opn_info$identifier_str) {
+      map_response(opn_info, log_info);
+   }
+   Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+}
+
+
+
 event zeek_init() &priority=5
 {
    Log::create_stream(ICSNPP_OPCUA_Binary::LOG,                                                     [$columns=OPCUA_Binary::Info_Log,                           $path="opcua_binary",                                                    $policy=log_policy_opcua_binary]);
@@ -571,19 +588,11 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
       }
 
       else if (info$msg_type == "CLO") {
-         local log_info = copy_common_data_to_logging_record(info);
-         map_request(info, log_info);
-         Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+         handle_clo_msg(info);
       }
 
       else if (info$msg_type == "OPN") {
-         local log_info = copy_common_data_to_logging_record(info);
-         if (REQUEST_IDENTIFIER in info$identifier_str) {
-            map_request(info, log_info);         }
-         else if (RESPONSE_IDENTIFIER in info$identifier_str) {
-            map_response(info, log_info);
-         }
-         Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
+         handle_opn_msg(info);
       }
    
 
