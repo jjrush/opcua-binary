@@ -35,7 +35,7 @@ export {
         endpoint_url                  : string  &log &optional;
 
         # Msg Body
-        sec_channel_id                : count   &log &optional;
+        sec_channel_id                : vector of count &log &optional;
         sec_policy_uri_len            : int     &log &optional;
         sec_policy_uri                : string  &log &optional;
         snd_cert_len                  : int     &log &optional;

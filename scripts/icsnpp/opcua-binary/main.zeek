@@ -203,7 +203,11 @@ function copy_common_data_to_logging_record(info: OPCUA_Binary::Info): OPCUA_Bin
    if (info?$request_id) {log_info$request_id = info$request_id;}
 
    # Channel identifiers
-   if (info?$sec_channel_id) {log_info$sec_channel_id = info$sec_channel_id;}
+   if (info?$sec_channel_id) {
+      local sec_channel_id: vector of count;
+      sec_channel_id += info$sec_channel_id;
+      log_info$sec_channel_id = sec_channel_id;
+   }
    # if (info?$sec_token_id) {log_info$sec_token_id = info$sec_token_id;}
 
    return log_info;
@@ -444,6 +448,10 @@ function map_request_response(request_info: OPCUA_Binary::Info, response_info: O
    local log_info = copy_common_data_to_logging_record(request_info);
    log_info$total_size = total_size;
 
+   if (request_info$sec_channel_id != response_info$sec_channel_id) {
+      log_info$sec_channel_id += response_info$sec_channel_id;
+   }
+
    # map fields from request and response
    log_info = map_request(request_info, log_info);
    log_info = map_response(response_info, log_info, MAPPING_REQ_RES);
@@ -484,17 +492,6 @@ function handle_clo_msg(clo_info: OPCUA_Binary::Info){
    map_request(clo_info, log_info);
    Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
 }
-function handle_opn_msg(opn_info: OPCUA_Binary::Info){
-   local log_info = copy_common_data_to_logging_record(opn_info);
-   if (REQUEST_IDENTIFIER in opn_info$identifier_str) {
-      map_request(opn_info, log_info);         }
-   else if (RESPONSE_IDENTIFIER in opn_info$identifier_str) {
-      map_response(opn_info, log_info);
-   }
-   Log::write(ICSNPP_OPCUA_Binary::LOG, log_info);
-}
-
-
 
 event zeek_init() &priority=5
 {
@@ -590,11 +587,6 @@ event opcua_binary_event(c: connection, info: OPCUA_Binary::Info)
       else if (info$msg_type == "CLO") {
          handle_clo_msg(info);
       }
-
-      else if (info$msg_type == "OPN") {
-         handle_opn_msg(info);
-      }
-   
 
       # else see if this message is a request and has a match in responses
       else if (info$request_id in c$opcua_binary_state$pending_responses && check_message_type(info, REQUEST_IDENTIFIER)) {
